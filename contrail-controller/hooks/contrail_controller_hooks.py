@@ -42,6 +42,9 @@ def install():
     # TODO: try to remove this call
     common_utils.fix_hostname()
 
+    if config.get('local-rabbitmq-hostname-resolution'):
+        utils.update_rabbitmq_cluster_hostnames()
+
     docker_utils.install()
     utils.update_charm_status()
 
@@ -78,8 +81,14 @@ def leader_settings_changed():
 @hooks.hook("controller-cluster-relation-joined")
 def cluster_joined():
     # ingress-address is set automatically by Juju
-    settings = {"unit-address": common_utils.get_ip(
-        endpoint='controller-cluster')}
+    settings = {
+        "unit-address": common_utils.get_ip(endpoint='controller-cluster'),
+    }
+    if config.get('local-rabbitmq-hostname-resolution'):
+        settings.update({
+            "rabbitmq-hostname": utils.get_contrail_rabbit_hostname(),
+        })
+
     relation_set(relation_settings=settings)
     utils.update_charm_status()
 
@@ -91,6 +100,14 @@ def cluster_changed():
     data = relation_get()
     # unit-address is used for backwards compatibility
     ip = data.get("ingress-address") or data.get("unit-address")
+
+    if config.get('local-rabbitmq-hostname-resolution'):
+        rabbit_hostname = data.get('rabbitmq-hostname')
+        if rabbit_hostname:
+            utils.update_hosts_file({
+                ip: rabbit_hostname,
+            })
+
     if not ip:
         log("There is no unit-address in the relation")
         return
@@ -146,7 +163,7 @@ def config_changed():
     # ingress-address and private-address (legacy) values are automatically
     # populated by Juju based on endpoint bindings, the code below is for
     # control-network config-based approach
-    if config.changed("control-network") and config("control-network"):
+    if config.changed("control-network") and config.get("control-network"):
         # this code path is only for the config-based approach and is
         # not needed with network spaces and ingress-address
         ip = common_utils.get_ip()
@@ -162,7 +179,11 @@ def config_changed():
             relation_set(relation_id=rid, relation_settings=settings)
         if is_leader():
             _address_changed(local_unit(), ip)
-    elif config.changed("control-network") and not config("control-network"):
+
+        if config.get('local-rabbitmq-hostname-resolution'):
+            utils.update_rabbitmq_cluster_hostnames()
+    elif (config.changed("control-network")
+          and not config.get("control-network")):
         # control-network config has been switched off
         # restore private-address if it was changed before
         rnames = ("contrail-controller",
@@ -181,6 +202,9 @@ def config_changed():
         controller_ip = common_utils.get_ip(endpoint='controller-cluster')
         if is_leader():
             _address_changed(local_unit(), controller_ip)
+
+        if config.get('local-rabbitmq-hostname-resolution'):
+            utils.update_rabbitmq_cluster_hostnames()
 
     docker_utils.config_changed()
     utils.update_charm_status()

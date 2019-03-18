@@ -47,12 +47,13 @@ def config_changed():
     # control-network config-based approach
     rnames = ("contrail-analytics", "contrail-analyticsdb",
               "analytics-cluster", "http-services")
-    if config.changed("control-network") and config("control-network"):
+    if config.changed("control-network") and config.get("control-network"):
         settings = {'private-address': common_utils.get_ip()}
         for rname in rnames:
             for rid in relation_ids(rname):
                 relation_set(relation_id=rid, relation_settings=settings)
-    elif config.changed("control-network") and not config("control-network"):
+    elif (config.changed("control-network")
+          and not config.get("control-network")):
         for rname in rnames:
             ip = common_utils.get_ip(endpoint=rname)
             settings = {"private-address": ip}
