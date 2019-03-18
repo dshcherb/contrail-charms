@@ -27,6 +27,8 @@ from charmhelpers.core.hookenv import (
     close_port,
 )
 
+from charmhelpers.core.unitdata import kv
+
 import contrail_controller_utils as utils
 import common_utils
 import docker_utils
@@ -41,6 +43,9 @@ def install():
 
     # TODO: try to remove this call
     common_utils.fix_hostname()
+
+    if config.get('local-rabbitmq-hostname-resolution'):
+        utils.update_rabbitmq_cluster_hostnames()
 
     docker_utils.install()
     utils.update_charm_status()
@@ -78,6 +83,12 @@ def leader_settings_changed():
 @hooks.hook("controller-cluster-relation-joined")
 def cluster_joined():
     settings = {"unit-address": common_utils.get_ip()}
+
+    if config.get('local-rabbitmq-hostname-resolution'):
+        settings.update({
+            "rabbitmq-hostname": utils.get_contrail_rabbit_hostname(),
+        })
+
     relation_set(relation_settings=settings)
     utils.update_charm_status()
 
@@ -88,6 +99,12 @@ def cluster_changed():
         return
     data = relation_get()
     ip = data.get("unit-address")
+
+    if config.get('local-rabbitmq-hostname-resolution'):
+        rabbit_hostname = data.get('rabbitmq-hostname')
+        if rabbit_hostname:
+            utils.update_hosts_file(ip, rabbit_hostname)
+
     if not ip:
         log("There is no unit-address in the relation")
         return
@@ -154,6 +171,24 @@ def config_changed():
             relation_set(relation_id=rid, relation_settings=settings)
         if is_leader():
             _address_changed(local_unit(), ip)
+
+        if config.get('local-rabbitmq-hostname-resolution'):
+            # this will also take care of updating the hostname in case
+            # control-network changes to something different although
+            # such host reconfiguration is unlikely
+            utils.update_rabbitmq_cluster_hostnames()
+
+    if config.changed("local-rabbitmq-hostname-resolution"):
+        if config.get("local-rabbitmq-hostname-resolution"):
+            # enabling this option will trigger events on other units
+            # so their hostnames will be added as -changed events fire
+            # we just need to set our hostname
+            utils.update_rabbitmq_cluster_hostnames()
+        else:
+            kvstore = kv()
+            rabbitmq_hosts = kvstore.get(key='rabbitmq_hosts', default={})
+            for ip, hostname in rabbitmq_hosts
+                utils.update_hosts_file(ip, hostname, remove_hostname=True)
 
     docker_utils.config_changed()
     utils.update_charm_status()
