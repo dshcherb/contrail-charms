@@ -1,5 +1,8 @@
 from socket import inet_aton
 import struct
+import os
+import tempfile
+import socket
 
 from charmhelpers.core.hookenv import (
     config,
@@ -9,13 +12,17 @@ from charmhelpers.core.hookenv import (
     status_set,
     leader_get,
     log,
+    INFO,
     local_unit,
+    network_get,
 )
 from charmhelpers.core.templating import render
 import common_utils
 import docker_utils
 
 config = config()
+
+HOSTS_FILE = '/etc/hosts'
 
 BASE_CONFIGS_PATH = "/etc/contrail"
 
@@ -179,3 +186,68 @@ def update_charm_status():
         docker_utils.compose_run(REDIS_CONFIGS_PATH + "/docker-compose.yaml")
 
     common_utils.update_services_status(SERVICES)
+
+
+def update_hosts_file(hosts_map):
+    """Update /etc/hosts file with cluster names and IPs.
+
+    RabbitMQ requires NODE names in a cluster to be resolvable.
+    https://www.rabbitmq.com/clustering.html#issues-hostname
+
+    In a multi-homed host scenario cluster IPs may have FQDNs structured
+    as interface_name.host_name.domain which will result in an issue if
+    a short name is derived from an FQDN by taking its first part.
+    See https://github.com/Juniper/contrail-charms/issues/50
+
+    This function updates /etc/hosts file with resolutions for IP -> hostname
+    lookups.
+    """
+    with open(HOSTS_FILE, 'r') as hosts:
+        lines = hosts.readlines()
+
+    log("Updating hosts file with: %s (current: %s)" % (hosts_map, lines),
+        level=INFO)
+
+    newlines = []
+    for ip, hostname in hosts_map.items():
+        if not ip or not hostname:
+            continue
+
+        keepers = []
+        for line in lines:
+            _line = line.split()
+            if len(line) < 2 or not (_line[0] == ip or hostname in _line[1:]):
+                keepers.append(line)
+            else:
+                log("Removing line '%s' from hosts file" % (line))
+
+        lines = keepers
+        newlines.append("%s %s\n" % (ip, hostname))
+
+    lines += newlines
+
+    with tempfile.NamedTemporaryFile(delete=False) as tmpfile:
+        with open(tmpfile.name, 'w') as hosts:
+            for line in lines:
+                hosts.write(line)
+
+    os.rename(tmpfile.name, HOSTS_FILE)
+    os.chmod(HOSTS_FILE, 0o644)
+
+
+def get_contrail_rabbit_hostname():
+    """Return this unit's hostname.
+
+    @returns hostname
+    """
+    return '{}-contrail-rmq'.format(socket.gethostname())
+
+
+def update_rabbitmq_cluster_hostnames():
+    """Updates /etc/hosts with rabbitmq cluster node hostnames"""
+    # get_ip has logic to use control-network config option if it is set,
+    # otherwise, use network space bindings or a default gateway interface
+    ip = common_utils.get_ip(endpoint='controller-cluster')
+    update_hosts_file({
+        ip: get_contrail_rabbit_hostname()
+    })
