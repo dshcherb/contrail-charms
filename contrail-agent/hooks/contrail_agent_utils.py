@@ -13,6 +13,7 @@ from charmhelpers.core.hookenv import (
     relation_ids,
     status_set,
     unit_get,
+    network_get,
     WARNING,
 )
 
@@ -126,7 +127,8 @@ def get_context():
     info = common_utils.json_loads(config.get("orchestrator_info"), dict())
     ctx.update(info)
 
-    ips = [relation_get("private-address", unit, rid)
+    ips = [(relation_get("ingress-address", unit, rid)
+            or relation_get("private-address", unit, rid))
            for rid in relation_ids("contrail-controller")
            for unit in related_units(rid)]
     ctx["controller_servers"] = ips
@@ -135,7 +137,14 @@ def get_context():
 
     if "plugin-ips" in config:
         plugin_ips = json.loads(config.get["plugin-ips"])
-        my_ip = unit_get("private-address")
+        try:
+            my_ip = network_get(
+                endpoint='vrouter-plugin')['ingress-addresses'][0]
+        except NotImplementedError:
+            log("Using unit-get private-address as an older version of Juju"
+                " is used")
+            my_ip = unit_get("private-address")
+
         if my_ip in plugin_ips:
             ctx["plugin_settings"] = plugin_ips[my_ip]
 

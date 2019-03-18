@@ -74,7 +74,7 @@ def get_controller_ips():
     controller_ips = dict()
     for rid in relation_ids("controller-cluster"):
         for unit in related_units(rid):
-            ip = relation_get("unit-address", unit, rid)
+            ip = relation_get("ingress-address", unit, rid)
             controller_ips[unit] = ip
     # add it's own ip address
     controller_ips[local_unit()] = common_utils.get_ip()

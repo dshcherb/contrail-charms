@@ -77,7 +77,9 @@ def leader_settings_changed():
 
 @hooks.hook("controller-cluster-relation-joined")
 def cluster_joined():
-    settings = {"unit-address": common_utils.get_ip()}
+    # ingress-address is set automatically by Juju
+    settings = {"unit-address": common_utils.get_ip(
+        endpoint='controller-cluster')}
     relation_set(relation_settings=settings)
     utils.update_charm_status()
 
@@ -87,7 +89,8 @@ def cluster_changed():
     if not is_leader():
         return
     data = relation_get()
-    ip = data.get("unit-address")
+    # unit-address is used for backwards compatibility
+    ip = data.get("ingress-address") or data.get("unit-address")
     if not ip:
         log("There is no unit-address in the relation")
         return
@@ -140,7 +143,12 @@ def config_changed():
         raise Exception("Config is invalid. auth-mode must one of: "
                         "rbac, cloud-admin, no-auth.")
 
-    if config.changed("control-network"):
+    # ingress-address and private-address (legacy) values are automatically
+    # populated by Juju based on endpoint bindings, the code below is for
+    # control-network config-based approach
+    if config.changed("control-network") and config("control-network"):
+        # this code path is only for the config-based approach and is
+        # not needed with network spaces and ingress-address
         ip = common_utils.get_ip()
         settings = {"private-address": ip}
         rnames = ("contrail-controller",
@@ -154,6 +162,25 @@ def config_changed():
             relation_set(relation_id=rid, relation_settings=settings)
         if is_leader():
             _address_changed(local_unit(), ip)
+    elif config.changed("control-network") and not config("control-network"):
+        # control-network config has been switched off
+        # restore private-address if it was changed before
+        rnames = ("contrail-controller",
+                  "contrail-analytics", "contrail-analyticsdb",
+                  "http-services", "https-services")
+        for rname in rnames:
+            ip = common_utils.get_ip(endpoint=rname)
+            settings = {"private-address": ip}
+            for rid in relation_ids(rname):
+                relation_set(relation_id=rid, relation_settings=settings)
+        peer_rname = 'controller-cluster'
+        settings = {"unit-address": common_utils.get_ip(endpoint=peer_rname)}
+        for rid in relation_ids(peer_rname):
+            relation_set(relation_id=rid, relation_settings=settings)
+
+        controller_ip = common_utils.get_ip(endpoint='controller-cluster')
+        if is_leader():
+            _address_changed(local_unit(), controller_ip)
 
     docker_utils.config_changed()
     utils.update_charm_status()
@@ -200,7 +227,12 @@ def update_southbound_relations(rid=None):
 
 @hooks.hook("contrail-controller-relation-joined")
 def contrail_controller_joined():
-    settings = {"private-address": common_utils.get_ip(), "port": 8082}
+    # ingress-address is set automatically by Juju based on space bindings
+    # private-address is set for backwards-compatibility
+    settings = {
+        "private-address": common_utils.get_ip(endpoint='contrail-controller'),
+        "port": 8082
+    }
     relation_set(relation_settings=settings)
     if is_leader():
         update_southbound_relations(rid=relation_id())
@@ -216,7 +248,7 @@ def contrail_controller_changed():
     if is_leader():
         if "dpdk" in data:
             # remote unit is an agent
-            address = data["private-address"]
+            address = data.get('ingress-address') or data["private-address"]
             flags = common_utils.json_loads(config.get("agents-info"), dict())
             flags[address] = data["dpdk"]
             config["agents-info"] = json.dumps(flags)
@@ -243,8 +275,12 @@ def contrail_controller_departed():
 
 @hooks.hook("contrail-analytics-relation-joined")
 def analytics_joined():
-    settings = {"private-address": common_utils.get_ip(),
-                'unit-type': 'controller'}
+    # ingress-address is set automatically by Juju based on space bindings
+    # private-address is set for backwards-compatibility
+    settings = {
+        "private-address": common_utils.get_ip(endpoint='contrail-analytics'),
+        'unit-type': 'controller'
+    }
     relation_set(relation_settings=settings)
     if is_leader():
         update_northbound_relations(rid=relation_id())
@@ -262,8 +298,13 @@ def analytics_changed_departed():
 
 @hooks.hook("contrail-analyticsdb-relation-joined")
 def analyticsdb_joined():
-    settings = {"private-address": common_utils.get_ip(),
-                'unit-type': 'controller'}
+    # ingress-address is set automatically by Juju based on space bindings
+    # private-address is set for backwards-compatibility
+    settings = {
+        "private-address": common_utils.get_ip(
+            endpoint='contrail-analyticsdb'),
+        'unit-type': 'controller'
+    }
     relation_set(relation_settings=settings)
     if is_leader():
         update_northbound_relations(rid=relation_id())
@@ -403,7 +444,7 @@ def tls_certificates_relation_joined():
         sans_ips.append(gethostbyname(hostname))
     except:
         pass
-    control_ip = common_utils.get_ip()
+    control_ip = common_utils.get_ip(endpoint='https-services')
     if control_ip not in sans_ips:
         sans_ips.append(control_ip)
     res = check_output(['getent', 'hosts', control_ip])

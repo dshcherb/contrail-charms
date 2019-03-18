@@ -194,7 +194,9 @@ def _is_related_to(rel_name):
 
 def _get_context():
     ctx = {}
-    ctx["api_servers"] = [relation_get("private-address", unit, rid)
+    ctx["api_servers"] = [(relation_get("ingress-address")
+                           or relation_get("private-address"),
+                           unit, rid)
                           for rid in relation_ids("contrail-controller")
                           for unit in related_units(rid)]
     ctx["api_port"] = config.get("api_port")
