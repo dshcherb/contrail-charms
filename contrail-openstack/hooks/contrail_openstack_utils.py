@@ -201,7 +201,9 @@ def _get_context():
         ip = config.get("api_ip")
     ctx["api_server"] = ip
 
-    ctx["api_servers"] = [relation_get("private-address", unit, rid)
+    ctx["api_servers"] = [(relation_get("ingress-address")
+                           or relation_get("private-address"),
+                           unit, rid)
                           for rid in relation_ids("contrail-controller")
                           for unit in related_units(rid)]
     ctx["api_port"] = config.get("api_port")

@@ -69,7 +69,8 @@ def contrail_controller_changed():
             config[key] = data[data_key]
 
     _update_config("analytics_servers", "analytics-server")
-    _update_config("api_ip", "private-address")
+    _update_config("api_ip", ('ingress-address' if data.get('ingress-address')
+                              else 'private-address'))
     _update_config("api_port", "port")
     _update_config("auth_info", "auth-info")
     _update_config("orchestrator_info", "orchestrator-info")
@@ -146,7 +147,7 @@ def vrouter_plugin_changed():
     # accepts 'settings' value as a serialized dict to json for contrail-vrouter-agent.conf:
     # {"DEFAULT": {"key1": "value1"}, "SECTION_2": {"key1": "value1"}}
     data = relation_get()
-    plugin_ip = data.get("private-address")
+    plugin_ip = data.get("ingress-address") or data.get("private-address")
     plugin_ready = data.get("ready", False)
     if plugin_ready:
         plugin_ips = json.loads(config.get("plugin-ips", "{}"))

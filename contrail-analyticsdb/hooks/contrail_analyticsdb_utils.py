@@ -60,7 +60,8 @@ def servers_ctx():
     for rid in relation_ids("contrail-analyticsdb"):
         for unit in related_units(rid):
             utype = relation_get("unit-type", unit, rid)
-            ip = relation_get("private-address", unit, rid)
+            ip = (relation_get("ingress-address", unit, rid) or
+                  relation_get("private-address", unit, rid))
             if utype == "controller":
                 controller_ip_list.append(ip)
             if utype == "analytics":
@@ -77,7 +78,8 @@ def servers_ctx():
 def analyticsdb_ctx():
     """Get the ipaddres of all analyticsdb nodes"""
     analyticsdb_ip_list = [
-        relation_get("private-address", unit, rid)
+        (relation_get("ingress-address", unit, rid) or
+         relation_get("private-address", unit, rid))
         for rid in relation_ids("analyticsdb-cluster")
         for unit in related_units(rid)]
     # add it's own ip address

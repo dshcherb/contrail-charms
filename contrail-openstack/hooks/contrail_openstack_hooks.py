@@ -19,6 +19,7 @@ from charmhelpers.core.hookenv import (
     leader_set,
     is_leader,
     unit_private_ip,
+    network_get,
 )
 
 import contrail_openstack_utils as utils
@@ -43,7 +44,7 @@ def config_changed():
     if changed:
         _notify_nova()
         _notify_neutron()
-        _notufy_heat()
+        _notify_heat()
 
     if is_leader():
         _configure_metadata_shared_secret()
@@ -86,7 +87,8 @@ def contrail_controller_changed():
 
     _update_config("auth_info", "auth-info")
     _update_config("api_vip", "api-vip")
-    _update_config("api_ip", "private-address")
+    _update_config("api_ip", ('ingress-address' if data.get('ingress-address')
+                              else 'private-address'))
     _update_config("api_port", "port")
     _update_config("auth_mode", "auth-mode")
 
@@ -95,7 +97,12 @@ def contrail_controller_changed():
         config["dpdk"] = False
         log("DPDK for current host is False. agents-info is not provided.")
     else:
-        ip = unit_private_ip()
+        try:
+            ip = network_get(endpoint='neutron-api')['ingress-addresses'][0]
+        except NotImplementedError:
+            log("Using unit-get private-address as an older version of Juju"
+                " is used")
+            ip = unit_private_ip()
         value = json.loads(info).get(ip, False)
         if not isinstance(value, bool):
             value = yaml.load(value)

@@ -36,10 +36,19 @@ def install():
 
 @hooks.hook("config-changed")
 def config_changed():
+    # ingress-address and private-address (legacy) values are automatically
+    # populated by Juju based on endpoint bindings, the code below is for
+    # control-network config-based approach
+    rnames = ("contrail-analyticsdb", "analyticsdb-cluster")
     if config.changed("control-network"):
         settings = {'private-address': common_utils.get_ip()}
-        rnames = ("contrail-analyticsdb", "analyticsdb-cluster")
         for rname in rnames:
+            for rid in relation_ids(rname):
+                relation_set(relation_id=rid, relation_settings=settings)
+    elif config.changed("control-network") and not config("control-network"):
+        for rname in rnames:
+            ip = common_utils.get_ip(endpoint=rname)
+            settings = {"private-address": ip}
             for rid in relation_ids(rname):
                 relation_set(relation_id=rid, relation_settings=settings)
 
@@ -49,7 +58,10 @@ def config_changed():
 
 @hooks.hook("contrail-analyticsdb-relation-joined")
 def analyticsdb_joined():
-    settings = {'private-address': common_utils.get_ip()}
+    settings = {
+        'private-address': common_utils.get_ip(
+            endpoint='contrail-analyticsdb')
+    )}
     relation_set(relation_settings=settings)
 
 
@@ -93,7 +105,10 @@ def analyticsdb_departed():
 
 @hooks.hook("analyticsdb-cluster-relation-joined")
 def analyticsdb_cluster_joined():
-    settings = {'private-address': common_utils.get_ip()}
+    settings = {
+        'private-address': common_utils.get_ip(
+            endpoint='analyticsdb-cluster'
+        )}
     relation_set(relation_settings=settings)
 
 

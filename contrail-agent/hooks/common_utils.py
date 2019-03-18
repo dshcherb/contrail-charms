@@ -16,7 +16,8 @@ from charmhelpers.core.hookenv import (
     application_version_set,
     config,
     log,
-    status_set
+    status_set,
+    network_get,
 )
 from charmhelpers.core.host import file_hash, write_file
 from charmhelpers.core.templating import render
@@ -24,7 +25,7 @@ from charmhelpers.core.templating import render
 config = config()
 
 
-def get_ip():
+def get_ip(endpoint=None):
     network = config.get("control-network")
     if network:
         # try to get ip from CIDR
@@ -37,6 +38,9 @@ def get_ip():
             return get_iface_addr(network)[0]
         except Exception:
             pass
+    elif endpoint:
+        # use an endpoint <-> network space binding or a default binding
+        return network_get(endpoint)['ingress-addresses'][0]
 
     return _get_default_ip()
 
