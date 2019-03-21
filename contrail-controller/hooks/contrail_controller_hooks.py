@@ -89,6 +89,15 @@ def cluster_joined():
             "rabbitmq-hostname": utils.get_contrail_rabbit_hostname(),
         })
 
+        # a remote unit might have already set rabbitmq-hostname if
+        # it came up before this unit was provisioned so the -changed
+        # event will not fire for it and we have to handle it here
+        data = relation_get()
+        ip = data.get("unit-address")
+        rabbit_hostname = data.get('rabbitmq-hostname')
+        if ip and rabbit_hostname:
+            utils.update_hosts_file(ip, rabbit_hostname)
+
     relation_set(relation_settings=settings)
     utils.update_charm_status()
 
@@ -100,15 +109,16 @@ def cluster_changed():
     data = relation_get()
     ip = data.get("unit-address")
 
-    if config.get('local-rabbitmq-hostname-resolution'):
-        rabbit_hostname = data.get('rabbitmq-hostname')
-        if rabbit_hostname:
-            utils.update_hosts_file(ip, rabbit_hostname)
-
     if not ip:
         log("There is no unit-address in the relation")
         return
+
+    if config.get('local-rabbitmq-hostname-resolution'):
+        rabbit_hostname = data.get('rabbitmq-hostname')
+        if ip and rabbit_hostname:
+            utils.update_hosts_file(ip, rabbit_hostname)
     unit = remote_unit()
+
     _address_changed(unit, ip)
     utils.update_charm_status()
 
@@ -160,6 +170,16 @@ def config_changed():
     if config.changed("control-network"):
         ip = common_utils.get_ip()
         settings = {"private-address": ip}
+
+        if config.get('local-rabbitmq-hostname-resolution'):
+            settings.update({
+                "rabbitmq-hostname": utils.get_contrail_rabbit_hostname(),
+            })
+            # this will also take care of updating the hostname in case
+            # control-network changes to something different although
+            # such host reconfiguration is unlikely
+            utils.update_rabbitmq_cluster_hostnames()
+
         rnames = ("contrail-controller",
                   "contrail-analytics", "contrail-analyticsdb",
                   "http-services", "https-services")
@@ -172,12 +192,6 @@ def config_changed():
         if is_leader():
             _address_changed(local_unit(), ip)
 
-        if config.get('local-rabbitmq-hostname-resolution'):
-            # this will also take care of updating the hostname in case
-            # control-network changes to something different although
-            # such host reconfiguration is unlikely
-            utils.update_rabbitmq_cluster_hostnames()
-
     if config.changed("local-rabbitmq-hostname-resolution"):
         if config.get("local-rabbitmq-hostname-resolution"):
             # enabling this option will trigger events on other units
@@ -187,7 +201,7 @@ def config_changed():
         else:
             kvstore = kv()
             rabbitmq_hosts = kvstore.get(key='rabbitmq_hosts', default={})
-            for ip, hostname in rabbitmq_hosts
+            for ip, hostname in rabbitmq_hosts:
                 utils.update_hosts_file(ip, hostname, remove_hostname=True)
 
     docker_utils.config_changed()

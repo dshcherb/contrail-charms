@@ -205,7 +205,8 @@ def update_hosts_file(ip, hostname, remove_hostname=False):
     with open(HOSTS_FILE, 'r') as hosts:
         lines = hosts.readlines()
 
-    log("Updating hosts file with: %s (current: %s)" % (hosts_map, lines),
+    log("Updating hosts file with: {}:{}, remove={} (current: {})".format(
+        ip, hostname, remove_hostname, lines),
         level=INFO)
 
     newlines = []
@@ -222,7 +223,7 @@ def update_hosts_file(ip, hostname, remove_hostname=False):
 
             # handle a single hostname or alias removal
             if remove_hostname and parsed_ip == ip:
-                aliases = [a for a if a != hostname]
+                aliases = [a for a in aliases if a != hostname]
                 if parsed_hostname == hostname and aliases:
                     newlines.append(' '.join([ip, ' '.join(aliases)]))
                 else:
@@ -239,7 +240,7 @@ def update_hosts_file(ip, hostname, remove_hostname=False):
                 # move the hostname that is already present to aliases and use
                 # the one provided by the caller instead
                 aliases.append(parsed_hostname)
-                aliases = [a for a if a != hostname]
+                aliases = [a for a in aliases if a != hostname]
                 newlines.append(' '.join([ip, hostname, ' '.join(aliases)]))
                 # set a flag saying that we already encountered that hostname
                 hostname_present = True
