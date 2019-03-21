@@ -93,6 +93,8 @@ def cluster_joined():
         # it came up before this unit was provisioned so the -changed
         # event will not fire for it and we have to handle it here
         data = relation_get()
+        log("Joined the peer relation with {}: {}".format(
+            remote_unit(), data))
         ip = data.get("unit-address")
         rabbit_hostname = data.get('rabbitmq-hostname')
         if ip and rabbit_hostname:
@@ -107,6 +109,8 @@ def cluster_changed():
     if not is_leader():
         return
     data = relation_get()
+    log("Peer relation changed with {}: {}".format(
+        remote_unit(), data))
     ip = data.get("unit-address")
 
     if not ip:

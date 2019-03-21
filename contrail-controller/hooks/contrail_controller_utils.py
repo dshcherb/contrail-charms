@@ -234,8 +234,8 @@ def update_hosts_file(ip, hostname, remove_hostname=False):
             if hostname_mismatch and hostname_present:
                 # malformed /etc/hosts - let's let an operator sort this out
                 # and retry hook execution if needed
-                raise Exception('Multiple lines with hostname {} '
-                                'encountered'.format(hostname))
+                raise Exception('Multiple lines with ip {} '
+                                'encountered'.format(ip))
             elif hostname_mismatch and not hostname_present:
                 # move the hostname that is already present to aliases and use
                 # the one provided by the caller instead
@@ -244,9 +244,14 @@ def update_hosts_file(ip, hostname, remove_hostname=False):
                 newlines.append(' '.join([ip, hostname, ' '.join(aliases)]))
                 # set a flag saying that we already encountered that hostname
                 hostname_present = True
-            else:
+            elif not hostname_mismatch and not hostname_present:
+                # it's not a mismatch so we need to mark it the hostname as present
+                hostname_present = True
+            elif ip != parsed_ip:
                 # no mismatches - just keep the line
                 newlines.append(line)
+            else:
+                raise Exception('Unexpected condition occurred during /etc/hosts parsing')
 
     # if we haven't updated any existing lines for this hostname, just add it
     if not hostname_present:
@@ -273,6 +278,8 @@ def update_hosts_file(ip, hostname, remove_hostname=False):
         # managed
         rabbitmq_hosts.update({ip: hostname})
     kvstore.set(key='rabbitmq_hosts', value=rabbitmq_hosts)
+    # flush the store to persist data to sqlite
+    kvstore.flush()
 
 
 def get_contrail_rabbit_hostname():
