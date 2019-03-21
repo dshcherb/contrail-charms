@@ -93,6 +93,8 @@ def cluster_joined():
         # it came up before this unit was provisioned so the -changed
         # event will not fire for it and we have to handle it here
         data = relation_get()
+        log("Joined the peer relation with {}: {}".format(
+            remote_unit(), data))
         ip = data.get("unit-address")
         rabbit_hostname = data.get('rabbitmq-hostname')
         if ip and rabbit_hostname:
@@ -104,9 +106,9 @@ def cluster_joined():
 
 @hooks.hook("controller-cluster-relation-changed")
 def cluster_changed():
-    if not is_leader():
-        return
     data = relation_get()
+    log("Peer relation changed with {}: {}".format(
+        remote_unit(), data))
     ip = data.get("unit-address")
 
     if not ip:
@@ -118,6 +120,9 @@ def cluster_changed():
         if ip and rabbit_hostname:
             utils.update_hosts_file(ip, rabbit_hostname)
     unit = remote_unit()
+
+    if not is_leader():
+        return
 
     _address_changed(unit, ip)
     utils.update_charm_status()
@@ -171,6 +176,14 @@ def config_changed():
         ip = common_utils.get_ip()
         settings = {"private-address": ip}
 
+        rnames = ("contrail-controller",
+                  "contrail-analytics", "contrail-analyticsdb",
+                  "http-services", "https-services")
+        for rname in rnames:
+            for rid in relation_ids(rname):
+                relation_set(relation_id=rid, relation_settings=settings)
+        settings = {"unit-address": ip}
+
         if config.get('local-rabbitmq-hostname-resolution'):
             settings.update({
                 "rabbitmq-hostname": utils.get_contrail_rabbit_hostname(),
@@ -180,13 +193,6 @@ def config_changed():
             # such host reconfiguration is unlikely
             utils.update_rabbitmq_cluster_hostnames()
 
-        rnames = ("contrail-controller",
-                  "contrail-analytics", "contrail-analyticsdb",
-                  "http-services", "https-services")
-        for rname in rnames:
-            for rid in relation_ids(rname):
-                relation_set(relation_id=rid, relation_settings=settings)
-        settings = {"unit-address": ip}
         for rid in relation_ids("controller-cluster"):
             relation_set(relation_id=rid, relation_settings=settings)
         if is_leader():

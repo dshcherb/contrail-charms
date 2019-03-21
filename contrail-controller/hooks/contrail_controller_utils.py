@@ -223,6 +223,8 @@ def update_hosts_file(ip, hostname, remove_hostname=False):
 
             # handle a single hostname or alias removal
             if remove_hostname and parsed_ip == ip:
+                log("Removing ip:hostname pair: {}:{}".format(ip,
+                                                              hostname))
                 aliases = [a for a in aliases if a != hostname]
                 if parsed_hostname == hostname and aliases:
                     newlines.append(' '.join([ip, ' '.join(aliases)]))
@@ -231,12 +233,15 @@ def update_hosts_file(ip, hostname, remove_hostname=False):
 
             hostname_mismatch = (ip == parsed_ip
                                  and hostname != parsed_hostname)
+            log("hostname mismatch: {}".format(hostname_mismatch))
             if hostname_mismatch and hostname_present:
                 # malformed /etc/hosts - let's let an operator sort this out
                 # and retry hook execution if needed
-                raise Exception('Multiple lines with hostname {} '
-                                'encountered'.format(hostname))
+                raise Exception('Multiple lines with ip {} '
+                                'encountered'.format(ip))
             elif hostname_mismatch and not hostname_present:
+                log("Changing an existing entry for {}".format(
+                    hostname))
                 # move the hostname that is already present to aliases and use
                 # the one provided by the caller instead
                 aliases.append(parsed_hostname)
@@ -244,13 +249,30 @@ def update_hosts_file(ip, hostname, remove_hostname=False):
                 newlines.append(' '.join([ip, hostname, ' '.join(aliases)]))
                 # set a flag saying that we already encountered that hostname
                 hostname_present = True
-            else:
+            elif not hostname_mismatch and not hostname_present:
+                log("No hostname mismatches and have not seen {}"
+                    " in any previous lines".format(hostname))
+
+                if not hostname == parsed_hostname:
+                    newlines.append("%s %s\n" % (ip, hostname))
+
+                # it's not a mismatch so we need to mark it the hostname as present
+                hostname_present = True
+
+                # also need to preserve an old line
+                newlines.append(line)
+            elif ip != parsed_ip:
+                log("Preserving the line as an IP is different: {}"
+                    "".format(line))
                 # no mismatches - just keep the line
                 newlines.append(line)
 
     # if we haven't updated any existing lines for this hostname, just add it
     if not hostname_present:
+        log("Adding a new entry for {}:{}".format(ip, hostname))
         newlines.append("%s %s\n" % (ip, hostname))
+
+    log("New hosts file contents: {}".format(newlines))
 
     # create a temporary file in the same directory to ensure that moving
     # it over /etc/hosts is atomic (not done across file systems)
@@ -261,6 +283,7 @@ def update_hosts_file(ip, hostname, remove_hostname=False):
 
     # atomically replace the target file so that application runtimes do not
     # see intermediate changes to the file
+    log("moving {} over {}".format(tmpfile.name, HOSTS_FILE))
     os.rename(tmpfile.name, HOSTS_FILE)
     os.chmod(HOSTS_FILE, 0o644)
 
@@ -273,6 +296,8 @@ def update_hosts_file(ip, hostname, remove_hostname=False):
         # managed
         rabbitmq_hosts.update({ip: hostname})
     kvstore.set(key='rabbitmq_hosts', value=rabbitmq_hosts)
+    # flush the store to persist data to sqlite
+    kvstore.flush()
 
 
 def get_contrail_rabbit_hostname():
